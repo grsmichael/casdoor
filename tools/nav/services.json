@@ -1,0 +1,141 @@
+{
+  "_comment": "Casdoor 本地开发服务导航的【唯一数据源】。serve_nav.py 用它做健康探测，服务导航.html 通过 /__services 拉它渲染卡片。新增/改端口只改这里，两边自动同步，不存在顺序对不上的问题。",
+  "project": "Casdoor",
+  "version": "1.503.0",
+
+  "_version_comment": "版本号取自 routers/router.go 的 @APIVersion 注解（1.503.0），不是 git tag。",
+
+  "_credentials_comment": "默认账号区块。【唯一数据源】，页面「默认账号」面板 + 各服务卡片上的账号提示都由这里渲染。账号取自源码：管理员 admin/123 在 object/init.go:initBuiltInUser()，MySQL 在 docker-compose.yml，LDAP 在 object/init.go:initBuiltInLdap()，RADIUS 共享密钥在 conf/app.conf 的 radiusSecret。open 里的 port+path 用于生成「一键打开」按钮，host 跟随页面当前的「服务链接主机」选择。",
+  "credentials": {
+    "title": "默认账号（本地开发）",
+    "note": "全部取自源码与 <code>conf/app.conf</code>，仅用于本地开发，切勿用于生产。<br>管理员 <b>admin / 123</b> 由 <code>object/init.go</code> 在首次启动时写入（组织 <code>built-in</code>，全局管理员）；MySQL <code>root / 123456</code> 来自 <code>docker-compose.yml</code>。",
+    "items": [
+      {
+        "label": "管理员（前端 / 后端通用）",
+        "user": "admin",
+        "pwd": "123",
+        "role": "全局管理员 · built-in/admin",
+        "desc": "内置超级管理员。前端登录页用 admin / 123（组织选 built-in，或直接访问 /login/built-in）；后端 Swagger / SCIM 也用同一账号。首次启动由 initBuiltInUser() 写入。",
+        "open": { "port": 7001, "path": "/login", "label": "打开登录页" },
+        "open2": { "port": 8000, "path": "/swagger", "label": "后端 Swagger" }
+      },
+      {
+        "label": "MySQL 数据库",
+        "user": "root",
+        "pwd": "123456",
+        "role": "库 casdoor · 端口 3306",
+        "desc": "docker-compose.yml 里的 db 服务（mysql:8.0.25）。后端第一次启动带 --createDatabase=true 会自动建库建表。数据卷挂在 /usr/local/docker/mysql。"
+      },
+      {
+        "label": "内置 LDAP 目录",
+        "user": "cn=buildin,dc=example,dc=com",
+        "pwd": "123",
+        "role": "ou=BuildIn,dc=example,dc=com · 端口 389",
+        "desc": "后端进程内的 LDAP 服务（ldap.StartLdapServer），账号由 initBuiltInLdap() 写入。端口受 conf 的 ldapServerPort 控制；未起后端时 389 也连不上。"
+      },
+      {
+        "label": "内置 RADIUS 服务",
+        "user": "built-in/admin",
+        "pwd": "123",
+        "role": "共享密钥 secret · 端口 1812/udp",
+        "desc": "后端进程内的 RADIUS 服务（radius.StartRadiusServer）。共享密钥在 conf/app.conf 的 radiusSecret=secret，默认组织 built-in。UDP 无连接语义，导航页不做探测（状态恒为灰）。"
+      }
+    ],
+    "quickstart": [
+      { "text": "起数据库：<code>docker compose up -d db</code>（等价 <code>make deps</code>）。", "open": { "port": 3306, "path": "", "label": "tcp 3306", "tcp": true } },
+      { "text": "起后端：<code>go run main.go</code>（首次启动自动建库 + 写入内置组织/管理员/应用 app-built-in）。", "open": { "port": 8000, "path": "/swagger", "label": "Swagger" } },
+      { "text": "起前端：<code>cd web &amp;&amp; yarn &amp;&amp; yarn dev</code> → 7001（vite 已把 /api、/swagger、/.well-known、/scim、/cas 反代到 8000）。", "open": { "port": 7001, "path": "/login", "label": "登录页" } },
+      { "text": "登录 admin / 123，进「应用」确认 app-built-in 的 client_id / redirect_uri。", "open": { "port": 7001, "path": "/applications", "label": "应用列表" } },
+      { "text": "看 OIDC 发现文档，核对 authorization / token / jwks 端点是否齐全。", "open": { "port": 8000, "path": "/.well-known/openid-configuration", "label": "OIDC 发现" } },
+      { "text": "跑授权码流程：<code>/login/oauth/authorize?client_id=...&amp;response_type=code&amp;redirect_uri=...&amp;scope=openid&amp;state=...</code>", "open": { "port": 7001, "path": "/login/oauth/authorize", "label": "授权端点" } }
+    ]
+  },
+
+  "_services_comment": "kind 三种：http（GET 探测路径，2xx 视为 up，401/403/30x 也算活着）/ tcp（connect 成功即 up）/ udp（UDP 无连接语义，脚本不探测，状态恒灰）。container 只用于附加展示 docker 容器状态，不参与 up/down 判定。",
+  "services": [
+    {
+      "name": "casdoor（后端 / SSO 核心）",
+      "port": 8000,
+      "main": true,
+      "kind": "http",
+      "container": "casdoor-casdoor-1",
+      "probe": "/.well-known/openid-configuration",
+      "desc": "Go + Beego 单体后端：OIDC/OAuth 2.x、SAML 2.0、CAS、SCIM 2.0、MFA/WebAuthn、设备流、MCP，LDAP 与 RADIUS 服务也在这个进程里。端口来自 conf/app.conf 的 httpport；runmode=dev 时 Swagger 挂在 /swagger。下方链接按 routers/router.go 整理，⚠ 尚未逐个实测（本机缺 Go 运行时，服务未起），起后端后请以实际响应为准并回来订正。",
+      "creds": [
+        { "label": "登录", "user": "admin", "pwd": "123", "note": "组织 built-in" }
+      ],
+      "links": [
+        { "label": "OIDC 发现", "path": "/.well-known/openid-configuration" },
+        { "label": "JWKS 公钥", "path": "/.well-known/jwks" },
+        { "label": "OAuth AS 元数据", "path": "/.well-known/oauth-authorization-server" },
+        { "label": "受保护资源元数据", "path": "/.well-known/oauth-protected-resource" },
+        { "label": "Swagger", "path": "/swagger" },
+        { "label": "SCIM 用户（需登录）", "path": "/scim/Users" },
+        { "label": "SAML 元数据", "path": "/api/saml/metadata?application=admin/app-built-in" },
+        { "label": "指标", "path": "/api/metrics" }
+      ]
+    },
+    {
+      "name": "casdoor web（前端 · vite 开发服务器）",
+      "port": 7001,
+      "kind": "http",
+      "probe": "/",
+      "desc": "shadcn + Tailwind 的新前端（CLAUDE.md：web-old 已废弃只读，新改动只进 web）。vite 已把 /api、/swagger、/files、/.well-known/openid-configuration、/scim、/cas 反代到后端，后端地址可用环境变量 CASDOOR_BACKEND 改。日常调试走它最省事。",
+      "creds": [
+        { "label": "登录", "user": "admin", "pwd": "123" }
+      ],
+      "links": [
+        { "label": "打开", "path": "/" },
+        { "label": "登录页", "path": "/login" },
+        { "label": "授权端点（授权码流）", "path": "/login/oauth/authorize" },
+        { "label": "设备流（需 userCode）", "path": "/login/oauth/device" },
+        { "label": "同意页", "path": "/consent/app-built-in" },
+        { "label": "应用列表", "path": "/applications" },
+        { "label": "用户列表", "path": "/users" },
+        { "label": "MFA 绑定", "path": "/mfa/setup" }
+      ]
+    },
+    {
+      "name": "casdoor web-old（旧前端 · 只读对照）",
+      "port": 7002,
+      "kind": "http",
+      "probe": "/",
+      "desc": "antd 旧前端，CLAUDE.md 规定只读、不再改动，只在「行为对不对」时拿来对照。⚠ 它的启动脚本默认端口也是 7001（与 web 撞车），要用 <code>PORT=7002 yarn start</code> 起；本卡片的 port 跟着改成了 7002。",
+      "links": [
+        { "label": "打开", "path": "/" },
+        { "label": "登录页", "path": "/login" }
+      ]
+    },
+    {
+      "name": "mysql（数据库）",
+      "port": 3306,
+      "kind": "tcp",
+      "container": "casdoor-db-1",
+      "desc": "docker-compose.yml 的 db 服务，mysql:8.0.25；库 casdoor。后端 conf/app.conf 的 dataSourceName 是 root:123456@tcp(localhost:3306)/。",
+      "creds": [
+        { "label": "数据库", "user": "root", "pwd": "123456", "note": "库 casdoor" }
+      ],
+      "links": []
+    },
+    {
+      "name": "ldap（内置目录服务）",
+      "port": 389,
+      "kind": "tcp",
+      "desc": "后端进程内启动的 LDAP 服务（main.go → ldap.StartLdapServer），端口由 conf 的 ldapServerPort 控制（当前 389）。LDAPS 636 需要配置 ldapsCertId 才会起，默认没有。",
+      "creds": [
+        { "label": "绑定 DN", "user": "cn=buildin,dc=example,dc=com", "pwd": "123", "note": "baseDn ou=BuildIn,dc=example,dc=com" }
+      ],
+      "links": []
+    },
+    {
+      "name": "radius（内置 RADIUS 服务）",
+      "port": 1812,
+      "kind": "udp",
+      "desc": "后端进程内启动的 RADIUS 服务（main.go → radius.StartRadiusServer），UDP 1812。共享密钥 radiusSecret=secret，默认组织 built-in。UDP 无连接语义，脚本不做探测，状态恒为灰——要验就用 radtest 之类的客户端。",
+      "creds": [
+        { "label": "共享密钥", "user": "secret", "pwd": "radiusSecret", "note": "默认组织 built-in" }
+      ],
+      "links": []
+    }
+  ]
+}

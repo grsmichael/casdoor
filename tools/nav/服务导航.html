@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Casdoor 服务导航</title>
+<style>
+  :root{
+    --bg:#f5f7fa; --card:#ffffff; --line:#e3e8ef; --txt:#1f2937;
+    --sub:#6b7280; --accent:#2563eb; --accent2:#0ea5e9; --ok:#16a34a; --warn:#d97706;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif; background:var(--bg); color:var(--txt); min-height:100vh; padding:32px 20px;}
+  .wrap{max-width:980px; margin:0 auto;}
+  header{margin-bottom:8px;}
+  h1{font-size:26px; font-weight:700;}
+  h1 .ver{font-size:13px; font-weight:600; color:var(--sub); margin-left:8px;}
+  .hostline{margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:14px; color:var(--sub);}
+  .host-chip{background:var(--card); border:1px solid var(--line); border-radius:8px; padding:6px 12px; font-weight:600; color:var(--accent);}
+  .host-chip.ip{color:var(--accent2);}
+  .src{font-size:12px; color:var(--sub);}
+  .mini{font-size:12px; border:1px solid var(--line); background:var(--card); color:var(--txt); border-radius:6px; padding:4px 10px; cursor:pointer; font-family:inherit;}
+  .mini:hover{background:#eff6ff; border-color:var(--accent); color:var(--accent);}
+  .mini[disabled]{opacity:.45; cursor:not-allowed;}
+  .seg{display:inline-flex; border:1px solid var(--line); background:var(--card); border-radius:8px; overflow:hidden;}
+  .seg-btn{border:0; background:transparent; font-size:13px; padding:6px 14px; cursor:pointer; color:var(--sub); font-family:inherit;}
+  .seg-btn.active{background:var(--accent); color:#fff; font-weight:600;}
+  .seg-btn[disabled]{opacity:.45; cursor:not-allowed;}
+  input.ip{font-family:Consolas,monospace; font-size:13px; border:1px solid var(--line); border-radius:6px; padding:5px 9px; width:165px; color:var(--txt); background:var(--card);}
+  .note{margin:18px 0 24px; font-size:13px; color:var(--sub); background:var(--card); border:1px dashed var(--line); border-radius:10px; padding:10px 14px; line-height:1.7;}
+  .note b{color:var(--txt);}
+  .banner{padding:16px 18px; border-radius:10px; font-size:14px; line-height:1.8;}
+  .banner.err{background:#fef2f2; border:1px solid #fecaca; color:#991b1b;}
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:16px;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px 20px; transition:box-shadow .15s, transform .15s;}
+  .card:hover{box-shadow:0 6px 20px rgba(31,41,55,.10); transform:translateY(-2px);}
+  .card .top{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; gap:6px;}
+  .card h2{font-size:16px; font-weight:700; flex:1;}
+  .port{font-size:12px; font-weight:700; color:var(--accent); background:#eff6ff; border:1px solid #dbeafe; border-radius:999px; padding:3px 10px; white-space:nowrap;}
+  .desc{font-size:13px; color:var(--sub); line-height:1.6; margin-bottom:14px; min-height:42px;}
+  .url{font-size:12px; color:var(--sub); word-break:break-all; margin-bottom:12px; font-family:Consolas,monospace;}
+  .btn{display:inline-block; background:var(--accent); color:#fff; text-decoration:none; font-size:13px; font-weight:600; border-radius:8px; padding:7px 14px;}
+  .btn:hover{background:#1d4ed8;}
+  .btn.alt{background:#fff; color:var(--accent); border:1px solid var(--line);}
+  .btn.alt:hover{background:#eff6ff;}
+  .btns{display:flex; gap:8px; flex-wrap:wrap;}
+  .main{border-left:4px solid var(--ok); }
+  a.mini{display:inline-block; text-decoration:none; line-height:1.5;}
+  .creds{background:var(--card); border:1px solid var(--line); border-left:4px solid var(--warn); border-radius:14px; padding:18px 20px; margin-bottom:22px;}
+  .creds .chead{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:14px;}
+  .creds h2{font-size:17px; font-weight:700;}
+  .creds .chead .src{font-size:12px; color:var(--sub);}
+  .cred-list{display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:12px;}
+  .cred{border:1px solid var(--line); border-radius:10px; padding:13px 15px; background:#fbfcfe;}
+  .cred .clabel{font-size:13px; font-weight:700; margin-bottom:9px; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;}
+  .cred .crole{font-size:11px; font-weight:400; color:var(--sub);}
+  .kv{display:flex; align-items:center; gap:7px; margin-bottom:6px; flex-wrap:wrap;}
+  .kv .k{font-size:12px; color:var(--sub); flex:0 0 34px;}
+  .kv .v{font-family:Consolas,monospace; font-size:13px; font-weight:700; color:var(--txt); background:#eef2f7; border-radius:6px; padding:3px 10px;}
+  .cred .cdesc{font-size:12px; color:var(--sub); line-height:1.65; margin:8px 0 10px;}
+  .qs{margin-top:16px; border-top:1px dashed var(--line); padding-top:13px;}
+  .qs h3{font-size:13px; font-weight:700; margin-bottom:6px;}
+  .qs ol{margin-left:20px; font-size:13px; color:var(--sub); line-height:1.9;}
+  .qs ol li{margin-bottom:3px;}
+  .qs ol li b{color:var(--txt);}
+  .cnote{font-size:12px; color:var(--sub); line-height:1.75; margin-top:14px; padding-top:12px; border-top:1px dashed var(--line);}
+  .chips{display:flex; gap:6px; flex-wrap:wrap; margin-top:10px;}
+  .chip{font-size:12px; font-family:Consolas,monospace; background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; border-radius:6px; padding:3px 9px; display:inline-flex; align-items:center; gap:6px;}
+  .chip .cp{border:0; background:transparent; color:#9a3412; cursor:pointer; font-size:11px; padding:0; font-family:inherit; text-decoration:underline;}
+  .dot{display:inline-block; width:10px; height:10px; border-radius:50%; background:#9ca3af; margin-right:8px; vertical-align:middle; flex:0 0 auto;}
+  .dot.up{background:var(--ok);}
+  .dot.down{background:#dc2626;}
+  .dot.unknown{background:#9ca3af;}
+  footer{margin-top:28px; font-size:12px; color:var(--sub); line-height:1.8;}
+  code{background:#eef2f7; border-radius:4px; padding:1px 6px; font-size:12px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Casdoor 服务导航<span class="ver" id="verTag"></span></h1>
+    <div class="hostline">
+      当前主机：<span class="host-chip" id="hostDisplay">…</span>
+      <span class="host-chip ip" id="ipDisplay">…</span>
+      <button class="mini" id="reDetect" type="button">重新检测</button>
+    </div>
+    <div class="hostline"><span class="src" id="ipSource"></span></div>
+    <div class="hostline" id="shareLine" hidden>
+      共享给其他设备：<span class="host-chip ip" id="shareUrl">…</span>
+      <button class="mini" id="copyShare" type="button">复制</button>
+    </div>
+    <div class="hostline">
+      服务链接主机：
+      <span class="seg">
+        <button class="seg-btn active" id="segPage" type="button">本页地址栏</button>
+        <button class="seg-btn" id="segLan" type="button" disabled>内网 IP</button>
+      </span>
+      <span class="src" id="modeHint"></span>
+    </div>
+    <div class="hostline" id="probeLine">
+      <button class="mini" id="refreshProbe" type="button">刷新状态</button>
+      <span class="src" id="probeHint">点击查看各服务健康（服务端探测，规避跨域）</span>
+    </div>
+    <div class="hostline" id="manualLine" hidden>
+      未能自动获取内网 IP，请手填：
+      <input class="ip" id="manualIp" placeholder="例如 192.168.31.126" inputmode="decimal">
+      <button class="mini" id="manualSave" type="button">使用</button>
+      <button class="mini" id="manualClear" type="button" hidden>清除</button>
+      <span class="src">（或在命令行执行 <code>python tools/nav/serve_nav.py --list</code> 查询）</span>
+    </div>
+  </header>
+
+  <div class="note">
+    链接主机默认取自<b>本页地址栏</b>（<code>location.hostname</code>）——本机用 <code>localhost</code> 打开最省事；
+    上方可一键切换为<b>内网 IP</b>，便于把链接分享给手机/同事。<br>
+    <b>关于「局域网 IP」为什么要靠脚本托管：</b>Chrome/Edge 76+ 起浏览器默认隐藏本机内网 IP
+    （WebRTC 的 host 候选被替换成 mDNS 随机名、srflx 的 <code>raddr</code> 被置为 <code>0.0.0.0</code>），
+    <b>纯前端无法探测</b>。请用 <code>python tools/nav/serve_nav.py</code> 托管本页，页面即可同源读取准确的
+    内网 IP；自动探测失败时按提示手填一次即会记住。<br>
+    <b>健康状态</b>由本导航服务在服务端探测（无跨域问题）：绿=在线、红=不可达、灰=探测中/未知。
+    鼠标悬停状态点可看 HTTP 状态码与 docker 容器状态。<b>RADIUS 是 UDP 服务，脚本不做探测，恒为灰</b>。<br>
+    <b>服务清单与默认账号</b>都来自 <code>tools/nav/services.json</code>——加服务/改端口/改账号只改那一个文件，
+    探测、卡片、上方账号面板会自动同步。
+  </div>
+
+  <div id="svcError" class="banner err" hidden></div>
+
+  <div class="creds" id="credsPanel" hidden>
+    <div class="chead">
+      <h2 id="credTitle">默认账号</h2>
+      <span class="src">来自 <code>tools/nav/services.json</code> · 仅本地开发环境</span>
+    </div>
+    <div class="cred-list" id="credList"></div>
+    <div class="qs" id="qsBox" hidden>
+      <h3>首次上手路线</h3>
+      <ol id="qsList"></ol>
+    </div>
+    <div class="cnote" id="credNote"></div>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <footer>
+    起数据库：<code>docker compose up -d db</code>（等价 <code>make deps</code>）；起后端：<code>go run main.go</code>；起前端：<code>cd web &amp;&amp; yarn &amp;&amp; yarn dev</code>。<br>
+    整体容器化（后端会自己 build 镜像）：<code>docker compose up -d</code>；停止：<code>docker compose down</code>。<br>
+    默认账号见页面顶部「默认账号」面板（管理员 <code>admin / 123</code>；MySQL <code>root / 123456</code>，库名 <code>casdoor</code>）。<br>
+    本导航仅本地开发用（默认 <code>8899</code>，被占用时自动顺延，Ctrl+C 停止）。<br>
+    web-old 与 web 的 dev 脚本默认端口都是 7001，会撞车——对照旧前端时请用 <code>PORT=7002 yarn start</code>。
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var FALLBACK_HOST = "127.0.0.1";
+  var LS_KEY = "casdoor.navLanIp";
+  var DETECT_TIMEOUT_MS = 2500;
+
+  var el = function(id){ return document.getElementById(id); };
+
+  var pageHostRaw = location.hostname || "";
+  var pageHost = pageHostRaw || FALLBACK_HOST;
+  var pagePort = location.port || "";
+  var pagePath = location.protocol === "file:" ? "/" : location.pathname;
+  var served = false;
+
+  var state = { ip:null, source:"", extra:[], mode:"page" };
+  var SERVICES = [];      // 由 /__services 填充（单一数据源 services.json）
+  var CREDS = null;       // 同上，默认账号区块
+
+  // ---------------------------------------------------------------- 链接主机
+
+  // 服务卡片与「默认账号」里的跳转链接都用这一个口径：跟随页面地址栏，或切到内网 IP。
+  function linkHost(svc){
+    if(svc && svc.fixedHost){ return svc.fixedHost; }
+    return (state.mode === "lan" && state.ip) ? state.ip : pageHost;
+  }
+
+  // 把 services.json 里的 {port,path,tcp} 描述转成可点的 URL
+  function openUrl(o){
+    if(!o){ return ""; }
+    var h = (state.mode === "lan" && state.ip) ? state.ip : pageHost;
+    if(o.tcp){ return "tcp://" + h + ":" + o.port; }
+    return "http://" + h + ":" + o.port + (o.path || "/");
+  }
+
+  function esc(s){
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // ---------------------------------------------------------------- helpers
+
+  function isIPv4(s){ return /^\d{1,3}(\.\d{1,3}){3}$/.test(s || ""); }
+
+  function isPrivateIP(ip){
+    if(!isIPv4(ip)) return false;
+    if(/^192\.168\./.test(ip)) return true;
+    if(/^10\./.test(ip)) return true;
+    var m = /^172\.(\d+)\./.exec(ip);
+    return !!m && +m[1] >= 16 && +m[1] <= 31;
+  }
+
+  function ipRank(ip){
+    if(/^192\.168\./.test(ip)) return 0;
+    if(/^10\./.test(ip)) return 1;
+    return 2;
+  }
+
+  function lsGet(){ try { return localStorage.getItem(LS_KEY) || ""; } catch(_){ return ""; } }
+  function lsSet(v){
+    try { if(v){ localStorage.setItem(LS_KEY, v); } else { localStorage.removeItem(LS_KEY); } } catch(_){}
+  }
+
+  function showError(msg){
+    var b = el("svcError");
+    b.innerHTML = msg;
+    b.hidden = false;
+  }
+
+  // ---------------------------------------------------------------- 服务清单
+
+  function loadServices(){
+    if(location.protocol === "file:"){
+      showError("当前是 <code>file://</code> 直接打开，读不到服务清单。<br>" +
+                "请用 <code>python tools/nav/serve_nav.py</code> 托管本页后访问 " +
+                "<code>http://localhost:8899/</code>（内网 IP 探测同样需要它）。");
+      return Promise.resolve(false);
+    }
+    return fetch("__services", { cache:"no-store" })
+      .then(function(r){ if(!r.ok){ throw new Error("HTTP " + r.status); } return r.json(); })
+      .then(function(j){
+        SERVICES = (j && j.services) || [];
+        CREDS = (j && j.credentials) || null;
+        if(j && j.version){ el("verTag").textContent = "v" + j.version; }
+        if(!SERVICES.length){ throw new Error("services.json 里没有服务"); }
+        renderCreds();
+        buildGrid();
+        refreshStatus();
+        return true;
+      })
+      .catch(function(e){
+        showError("读取服务清单失败：" + e + "<br>确认 <code>tools/nav/services.json</code> 存在，且本页由 " +
+                  "<code>serve_nav.py</code> 托管。");
+        return false;
+      });
+  }
+
+  // ---------------------------------------------------------------- 探测链（内网 IP）
+
+  function fromServer(){
+    if(location.protocol === "file:"){ return Promise.resolve(null); }
+    return fetch("__sysinfo", { cache:"no-store" })
+      .then(function(r){ if(!r.ok){ throw new Error("HTTP " + r.status); } return r.json(); })
+      .then(function(j){
+        if(!j || !j.primary){ throw new Error("no primary"); }
+        served = true;
+        var extra = (j.lanIps || [])
+          .filter(function(x){ return x && x.ip && x.ip !== j.primary; })
+          .map(function(x){ return x.ip; });
+        return { ip: j.primary, source: "服务托管 serve_nav.py", extra: extra };
+      })
+      .catch(function(){ return null; });
+  }
+
+  function fromWebRTC(timeoutMs){
+    return new Promise(function(resolve){
+      var PC = window.RTCPeerConnection || window.webkitRTCPeerConnection || window.mozRTCPeerConnection;
+      if(!PC){ resolve(null); return; }
+      var found = [], done = false, pc = null;
+      function finish(){
+        if(done){ return; }
+        done = true;
+        try { if(pc){ pc.close(); } } catch(_){}
+        found.sort(function(a, b){ return ipRank(a) - ipRank(b); });
+        resolve(found[0] || null);
+      }
+      try{
+        pc = new PC({ iceServers: [] });
+        pc.createDataChannel("");
+        pc.onicecandidate = function(e){
+          if(!e.candidate){ finish(); return; }
+          var c = e.candidate;
+          var addr = c.address || "";
+          if(c.type === "host" && isPrivateIP(addr) && addr !== "0.0.0.0" && found.indexOf(addr) < 0){
+            found.push(addr);
+          }
+        };
+        pc.createOffer()
+          .then(function(o){ return pc.setLocalDescription(o); })
+          .catch(finish);
+        setTimeout(finish, timeoutMs || DETECT_TIMEOUT_MS);
+      }catch(_){ finish(); }
+    });
+  }
+
+  function resolveIp(){
+    return fromServer().then(function(r){
+      if(r){ return r; }
+      if(isPrivateIP(pageHostRaw)){ return { ip: pageHostRaw, source: "本页地址栏", extra: [] }; }
+      return fromWebRTC(DETECT_TIMEOUT_MS).then(function(ip){
+        if(ip){ return { ip: ip, source: "自动探测（WebRTC）", extra: [] }; }
+        var saved = lsGet();
+        if(isPrivateIP(saved)){ return { ip: saved, source: "手填已保存", extra: [] }; }
+        return { ip: null, source: "", extra: [] };
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------- 健康状态
+
+  function setDot(i, status, detail){
+    var d = el("dot-" + i);
+    if(!d){ return; }
+    d.className = "dot " + (status === "up" ? "up" : status === "down" ? "down" : "unknown");
+    d.title = detail || status || "";
+  }
+
+  function refreshStatus(){
+    var b = el("refreshProbe");
+    if(b){ b.disabled = true; b.textContent = "探测中…"; }
+    SERVICES.forEach(function(_, i){ setDot(i, "unknown", "探测中"); });
+    fetch("__probe", { cache:"no-store" })
+      .then(function(r){ if(!r.ok){ throw new Error("HTTP " + r.status); } return r.json(); })
+      .then(function(j){
+        var probes = (j && j.probes) || [];
+        probes.forEach(function(p, i){
+          var detail = p.detail || p.status || "";
+          if(p.container){ detail += " | docker: " + p.container; }
+          setDot(i, p.status, detail);
+        });
+        if(el("probeHint")){
+          el("probeHint").textContent = "更新于 " + (j.generatedAt || "") + "（绿=在线/红=不可达/灰=未知或不探测）";
+        }
+      })
+      .catch(function(e){
+        SERVICES.forEach(function(_, i){ setDot(i, "unknown", "探测失败: " + e); });
+        if(el("probeHint")){ el("probeHint").textContent = "探测失败：" + e; }
+      })
+      .then(function(){
+        if(b){ b.disabled = false; b.textContent = "刷新状态"; }
+      });
+  }
+
+  // ---------------------------------------------------------------- 渲染
+
+  // 卡片底部的账号小标签：账号 / 密码 + 一键复制（数据来自 services.json 的 creds）
+  function credChips(s){
+    if(!s.creds || !s.creds.length){ return ""; }
+    return '<div class="chips">' + s.creds.map(function(c){
+      var t = c.user + " / " + c.pwd;
+      return '<span class="chip">' + esc(c.label ? c.label + "：" : "") + esc(t) +
+             (c.note ? "（" + esc(c.note) + "）" : "") +
+             '<button class="cp" type="button" data-copy="' + esc(t) + '">复制</button></span>';
+    }).join("") + "</div>";
+  }
+
+  function buildGrid(){
+    var grid = el("grid");
+    grid.innerHTML = "";
+    SERVICES.forEach(function(s, i){
+      var host = linkHost(s);
+      var base = "http://" + host + ":" + s.port;
+      var card = document.createElement("div");
+      card.className = "card" + (s.main ? " main" : "");
+
+      var subs, urlLine;
+      if(s.kind === "udp"){
+        // UDP 无连接语义：脚本不探测，也不提供可点链接（浏览器只会开 http）
+        urlLine = "udp://" + host + ":" + s.port;
+        subs = '<span class="btn alt" style="cursor:default">UDP 服务 · 不探测</span>';
+      } else if(s.kind === "tcp"){
+        var c0 = (s.creds || [])[0];
+        urlLine = "tcp://" + host + ":" + s.port;
+        subs = '<span class="btn alt" style="cursor:default">用客户端连接' +
+               (c0 ? "（" + esc(c0.user + " / " + c0.pwd) + "）" : "") + "</span>";
+      } else {
+        urlLine = base;
+        subs = (s.links || []).map(function(x, k){
+          var cls = k === 0 ? "btn" : "btn alt";
+          return '<a class="' + cls + '" href="' + base + x.path + '" target="_blank" rel="noopener">' + x.label + "</a>";
+        }).join("");
+      }
+
+      var suffix = s.kind === "tcp" ? " (tcp)" : s.kind === "udp" ? " (udp)" : "";
+
+      card.innerHTML =
+        '<div class="top"><h2>' + s.name + "</h2>" +
+        '<span class="dot" id="dot-' + i + '"></span>' +
+        '<span class="port">' + s.port + suffix + "</span></div>" +
+        '<div class="desc">' + (s.desc || "") + "</div>" +
+        '<div class="url">' + urlLine + "</div>" +
+        '<div class="btns">' + subs + "</div>" +
+        credChips(s);
+      grid.appendChild(card);
+    });
+    el("modeHint").textContent = (state.mode === "lan")
+      ? "当前用内网 IP 生成链接（可直接分享）"
+      : "当前跟随地址栏（" + pageHost + "）";
+  }
+
+  // ---------------------------------------------------------------- 默认账号面板
+
+  function renderCreds(){
+    var panel = el("credsPanel");
+    if(!CREDS || !(CREDS.items || []).length){ panel.hidden = true; return; }
+    panel.hidden = false;
+    if(CREDS.title){ el("credTitle").textContent = CREDS.title; }
+
+    el("credList").innerHTML = (CREDS.items || []).map(function(c){
+      var combo = c.user + " / " + c.pwd;
+      var openBtns = ["open", "open2"].map(function(k){
+        var o = c[k];
+        if(!o){ return ""; }
+        if(o.tcp){
+          return '<span class="mini" style="cursor:default">' + esc(o.label || "tcp") + "</span>";
+        }
+        return '<a class="mini" href="' + esc(openUrl(o)) + '" target="_blank" rel="noopener">' +
+               esc(o.label || "打开") + "</a>";
+      }).join("");
+
+      return '<div class="cred">' +
+        '<div class="clabel">' + esc(c.label) +
+          (c.role ? '<span class="crole">' + esc(c.role) + "</span>" : "") + "</div>" +
+        '<div class="kv"><span class="k">账号</span><span class="v">' + esc(c.user) + "</span>" +
+          '<button class="mini" type="button" data-copy="' + esc(c.user) + '">复制</button></div>' +
+        '<div class="kv"><span class="k">密码</span><span class="v">' + esc(c.pwd) + "</span>" +
+          '<button class="mini" type="button" data-copy="' + esc(c.pwd) + '">复制</button></div>' +
+        '<div class="kv"><span class="k">组合</span>' +
+          '<button class="mini" type="button" data-copy="' + esc(combo) + '">复制 ' + esc(combo) + "</button></div>" +
+        (c.desc ? '<div class="cdesc">' + esc(c.desc) + "</div>" : "") +
+        (openBtns ? '<div class="btns">' + openBtns + "</div>" : "") +
+        "</div>";
+    }).join("");
+
+    var qs = CREDS.quickstart || [];
+    el("qsBox").hidden = !qs.length;
+    el("qsList").innerHTML = qs.map(function(x){
+      var btn = x.open
+        ? ' <a class="mini" href="' + esc(openUrl(x.open)) + '" target="_blank" rel="noopener">' + esc(x.open.label || "打开") + "</a>"
+        : "";
+      return "<li>" + (x.text || "") + btn + "</li>";
+    }).join("");
+
+    el("credNote").innerHTML = CREDS.note || "";
+  }
+
+  function apply(r){
+    state.ip = r.ip || null;
+    state.source = r.source || "";
+    state.extra = r.extra || [];
+
+    el("hostDisplay").textContent = pageHost + (pagePort ? ":" + pagePort : "");
+
+    if(state.ip){
+      el("ipDisplay").textContent = "局域网 IP：" + state.ip;
+      var desc = "来源：" + state.source;
+      if(state.extra.length){ desc += "；另有 " + state.extra.join("、"); }
+      el("ipSource").textContent = desc;
+      el("manualLine").hidden = true;
+      el("manualClear").hidden = true;
+      el("segLan").disabled = false;
+    } else {
+      el("ipDisplay").textContent = "局域网 IP：未能自动获取";
+      el("ipSource").textContent = "浏览器默认隐藏本机内网 IP —— 手填一次即可记住，或由 python tools/nav/serve_nav.py 托管本页自动获取";
+      el("segLan").disabled = true;
+      el("manualLine").hidden = false;
+      var saved = lsGet();
+      el("manualIp").value = isPrivateIP(saved) ? saved : "";
+      el("manualClear").hidden = !isPrivateIP(saved);
+      if(state.mode === "lan"){ state.mode = "page"; }
+      el("segPage").className = "seg-btn active";
+      el("segLan").className = "seg-btn";
+    }
+
+    if(served && state.ip){
+      el("shareUrl").textContent = "http://" + state.ip + (pagePort ? ":" + pagePort : "") + pagePath;
+      el("shareLine").hidden = false;
+    } else {
+      el("shareLine").hidden = true;
+    }
+
+    renderCreds();
+    buildGrid();
+  }
+
+  function setMode(m){
+    if(m === "lan" && !state.ip){ m = "page"; }
+    state.mode = m;
+    el("segPage").className = "seg-btn" + (m === "page" ? " active" : "");
+    el("segLan").className  = "seg-btn" + (m === "lan"  ? " active" : "");
+    renderCreds();
+    buildGrid();
+  }
+
+  // ---------------------------------------------------------------- 事件
+
+  el("segPage").addEventListener("click", function(){ setMode("page"); });
+  el("segLan").addEventListener("click", function(){ setMode("lan"); });
+
+  el("reDetect").addEventListener("click", function(){
+    var b = el("reDetect");
+    b.disabled = true;
+    b.textContent = "检测中…";
+    el("ipDisplay").textContent = "局域网 IP：检测中…";
+    el("ipSource").textContent = "";
+    resolveIp().then(apply, function(){ apply({ ip:null }); })
+      .then(function(){ b.disabled = false; b.textContent = "重新检测"; });
+  });
+
+  el("refreshProbe").addEventListener("click", function(){ refreshStatus(); });
+
+  el("manualSave").addEventListener("click", function(){
+    var v = (el("manualIp").value || "").trim();
+    if(!isPrivateIP(v)){
+      el("ipSource").textContent = "请填写形如 192.168.31.126 的内网 IPv4 地址";
+      el("manualIp").focus();
+      return;
+    }
+    lsSet(v);
+    apply({ ip: v, source: "手填", extra: [] });
+  });
+
+  el("manualClear").addEventListener("click", function(){
+    lsSet("");
+    el("manualIp").value = "";
+    apply({ ip: null, source: "", extra: [] });
+  });
+
+  el("manualIp").addEventListener("keydown", function(e){
+    if(e.key === "Enter"){ el("manualSave").click(); }
+  });
+
+  function legacyCopy(t){
+    try{
+      var ta = document.createElement("textarea");
+      ta.value = t;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }catch(_){}
+  }
+
+  function copyText(t, onDone){
+    function ok(){ if(onDone){ onDone(); } }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(t).then(ok, function(){ legacyCopy(t); ok(); });
+    } else {
+      legacyCopy(t);
+      ok();
+    }
+  }
+
+  el("copyShare").addEventListener("click", function(){
+    var b = el("copyShare");
+    copyText(el("shareUrl").textContent, function(){
+      b.textContent = "已复制";
+      setTimeout(function(){ b.textContent = "复制"; }, 1200);
+    });
+  });
+
+  // 「默认账号」面板 + 卡片账号标签里的复制按钮统一走事件委托（内容是动态渲染的）
+  document.addEventListener("click", function(e){
+    var node = (e.target && e.target.closest) ? e.target.closest("[data-copy]") : null;
+    if(!node){ return; }
+    e.preventDefault();
+    var txt = node.getAttribute("data-copy") || "";
+    var orig = node.textContent;
+    copyText(txt, function(){
+      node.textContent = "已复制";
+      setTimeout(function(){ node.textContent = orig; }, 1200);
+    });
+  });
+
+  // ---------------------------------------------------------------- 启动
+
+  el("hostDisplay").textContent = pageHost + (pagePort ? ":" + pagePort : "");
+  el("ipDisplay").textContent = "局域网 IP：检测中…";
+  // 先拉服务清单渲染卡片（内置一次健康探测），同时并行探测内网 IP
+  loadServices();
+  resolveIp().then(apply, function(){ apply({ ip:null }); });
+})();
+</script>
+</body>
+</html>
