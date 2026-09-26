@@ -1,0 +1,109 @@
+# Casdoor 本地开发「全量服务」：一次起齐 tools/nav/services.json 登记的 6 个服务。
+#
+#   docker compose -f docker-compose.full.yml up -d db casdoor   # 先起核心（快）
+#   docker compose -f docker-compose.full.yml up -d              # 再起前端（首次要装依赖，慢）
+#   docker compose -f docker-compose.full.yml logs -f casdoor
+#   docker compose -f docker-compose.full.yml down               # 加 -v 会连 MySQL 数据卷一起删
+#
+# 与仓库根 docker-compose.yml 的三点差异：
+#   1. casdoor 额外暴露内置 LDAP 389 / RADIUS 1812(udp) —— 官方 compose 只映射了 8000
+#   2. 新增 web(7001) / web-old(7002) 两个前端开发服务器（官方 compose 没有）
+#   3. casdoor 用官方预构建镜像，不从源码 build（官方 compose 首次构建要十几分钟）
+#
+# ⚠ 容器名刻意不写死：默认命名 casdoor-casdoor-1 / casdoor-db-1 正好与 services.json
+#   的 container 字段一致，导航页的「容器状态」栏才对得上。
+#
+# ⚠ 数据源不走 localhost：conf/conf.go 在 RUNNING_IN_DOCKER=true 时会把 localhost 重写成
+#   172.17.0.1（linux 分支），在 compose 自定义网络里未必可达。这里改用 GetConfigString 的
+#   环境变量优先特性（conf.go:44，环境变量覆盖 app.conf），直接写服务名 db:3306。
+
+services:
+  db:
+    image: mysql:8.0.25
+    platform: linux/amd64
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: "123456"
+    # 用命名卷而非官方 compose 的 /usr/local/docker/mysql —— 该路径不在 Docker Desktop
+    # 的默认文件共享列表内，macOS 上挂载会失败。
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p123456"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+    restart: unless-stopped
+
+  casdoor:
+    image: casbin/casdoor:latest
+    entrypoint: /bin/sh -c './server --createDatabase=true'
+    ports:
+      - "8000:8000"
+      - "389:389"        # 内置 LDAP（ldap.StartLdapServer）
+      - "1812:1812/udp"  # 内置 RADIUS（radius.StartRadiusServer）
+      - "7002:7002"      # 属于共享本网络命名空间的 web-old，见下方说明
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      RUNNING_IN_DOCKER: "true"
+      driverName: "mysql"
+      dataSourceName: "root:123456@tcp(db:3306)/"
+      dbName: "casdoor"
+    volumes:
+      - ./conf:/conf/
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8000/.well-known/openid-configuration"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+    restart: unless-stopped
+
+  web:
+    image: node:20
+    working_dir: /web
+    # 依赖已装则跳过 install，避免每次重启都重装；--host 0.0.0.0 否则容器外访问不到
+    command: >
+      sh -c "[ -n \"$(ls -A node_modules 2>/dev/null)\" ] || yarn install --network-timeout 600000;
+             yarn dev --host 0.0.0.0"
+    ports:
+      - "7001:7001"
+    environment:
+      # web/vite.config.ts 读这个变量做 devServer 代理，默认 localhost:8000 在容器里指自己
+      CASDOOR_BACKEND: "http://casdoor:8000"
+    volumes:
+      - ./web:/web
+      - /web/node_modules
+    depends_on:
+      - casdoor
+    restart: unless-stopped
+
+  web-old:
+    image: node:20
+    working_dir: /web-old
+    # web-old/craco.config.js 把 devServer 代理硬编码成 http://localhost:8000，
+    # 而 CLAUDE.md 规定 web-old 只读、不可修改。让它共享 casdoor 的网络命名空间，
+    # localhost:8000 就真的是 casdoor —— 无需改项目文件，也不用额外装 socat。
+    # 代价：端口映射只能写在 casdoor 的 ports 里（上面的 7002）。
+    network_mode: "service:casdoor"
+    # 不走 yarn start —— 那个脚本是 cross-env PORT=7001 craco start，
+    # cross-env 会把端口硬钉在 7001（与 web 撞车）。直接调 craco 才能让 7002 生效。
+    command: >
+      sh -c "[ -n \"$(ls -A node_modules 2>/dev/null)\" ] || yarn install --network-timeout 600000;
+             PORT=7002 HOST=0.0.0.0 ./node_modules/.bin/craco start"
+    environment:
+      PORT: "7002"
+      HOST: "0.0.0.0"
+    volumes:
+      - ./web-old:/web-old
+      - /web-old/node_modules
+    depends_on:
+      - casdoor
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
