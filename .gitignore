@@ -43,3 +43,6 @@ web/cypress/videos/
 web/cypress/screenshots/
 web-old/cypress/videos/
 web-old/cypress/screenshots/
+
+# Python bytecode cache
+tools/nav/__pycache__/
