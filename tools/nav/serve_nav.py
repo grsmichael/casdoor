@@ -26,14 +26,29 @@
 * udp：UDP 无连接语义，不做探测，状态恒为 unknown（灰）——RADIUS 属于这一类
 * 附加 `container` 字段（docker 容器状态，仅展示，不参与 up/down 判定）；docker 不可用时静默降级
 
-用法：
+用法（宿主机直跑）：
   python tools/nav/serve_nav.py                    # 默认 8899，被占则自动顺延
   python tools/nav/serve_nav.py --port 9000
   python tools/nav/serve_nav.py --bind 127.0.0.1   # 仅本机可访问
   python tools/nav/serve_nav.py --list             # 只打印本机内网 IP 后退出
   python tools/nav/serve_nav.py --open             # 启动后自动打开默认浏览器
 
+用法（Docker，见同目录 Dockerfile / docker-compose.yml）：
+  docker compose -f tools/nav/docker-compose.yml up -d
+  访问 http://localhost:8899/
+
+容器化相关环境变量（宿主机直跑时全部留空即可，行为与以前完全一致）：
+  NAV_PROBE_HOST  健康探测目标主机，默认 127.0.0.1。
+                  ⚠ 容器内必须指到宿主机，否则探测的是容器自己、服务全报 down。
+                  Docker Desktop 填 host.docker.internal；Linux 需在 compose 里配
+                  extra_hosts: "host.docker.internal:host-gateway"。
+  NAV_HOST_IP     页面「共享给其他设备」用的宿主机内网 IP（可选，不填会自动解析
+                  NAV_PROBE_HOST；容器里看到的是容器 IP，分享出去没意义，故需此值）
+  NAV_PORT        监听端口，默认 8899（被占仍自动顺延）
+  NAV_BIND        监听地址，默认 0.0.0.0
+
 停止：Ctrl+C（本脚本前台常驻；请勿放到「跑完即退」的一次性管道里）。
+      Docker 方式用 docker compose -f tools/nav/docker-compose.yml down。
 
 ⚠️ 仅用于本地开发环境：会把服务导航页（含端口/账号信息）暴露给同网段设备。
    不需要时请停掉，或用 --bind 127.0.0.1 限制为本机。
@@ -68,6 +83,26 @@ DEFAULT_PORTS = (8899, 8898, 8897, 8896)
 DEFAULT_BIND = "0.0.0.0"
 
 PRIVATE_RE = re.compile(r"^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)")
+
+
+# ------------------------------------------------------- 容器化支持（环境变量）
+# 在 Docker 里跑本服务时，容器内的 127.0.0.1 是「容器自己」，探测不到宿主机（或
+# casdoor 容器）监听的端口——所有服务会全部误报 down。用 NAV_PROBE_HOST 把探测目标
+# 指到宿主机即可：Docker Desktop 填 host.docker.internal，Linux 需配合
+# extra_hosts: "host.docker.internal:host-gateway"。
+#
+#   NAV_PROBE_HOST  探测目标主机，默认 127.0.0.1（宿主机直跑时的行为不变）
+#   NAV_HOST_IP     显式指定「宿主机内网 IP」，用于页面上的分享地址（可选）
+#   NAV_PORT        监听端口，默认 8899（被占仍会自动顺延）
+#   NAV_BIND        监听地址，默认 0.0.0.0
+def _env(name, default=None):
+    v = os.environ.get(name)
+    return v.strip() if (v and v.strip()) else default
+
+
+PROBE_HOST = _env("NAV_PROBE_HOST", "127.0.0.1")
+HOST_IP = _env("NAV_HOST_IP")          # 可选：宿主机内网 IP（分享地址用）
+IN_CONTAINER = os.path.exists("/.dockerenv")
 
 # ⚠ 必须绕开系统/环境代理再探测本机端口。
 # 本机若设了 http_proxy / HTTPS_PROXY（企业代理、IDE 代理、沙箱代理都算），
@@ -158,9 +193,36 @@ def lan_ips():
     return out
 
 
+def host_ip_for_share():
+    """页面「共享给其他设备」该用的 IP，返回 (ip, 来源说明)。
+
+    容器内运行时本进程看到的是容器 IP（172.17.x），分享给局域网同事没有意义，
+    真正要分享的是宿主机 IP。优先级：显式 NAV_HOST_IP > 解析 NAV_PROBE_HOST
+    （host.docker.internal 在 Docker Desktop 下解析出来正是宿主机）。
+    宿主机直跑时返回 (None, "")，沿用 lan_ips() 的探测结果。
+    """
+    if HOST_IP:
+        return HOST_IP, "环境变量 NAV_HOST_IP"
+    if IN_CONTAINER and PROBE_HOST not in ("127.0.0.1", "localhost", "::1"):
+        try:
+            ip = socket.gethostbyname(PROBE_HOST)
+            if ip and not ip.startswith("127."):
+                return ip, "解析 %s" % PROBE_HOST
+        except Exception:
+            pass
+    return None, ""
+
+
 def sysinfo(port, bind):
     ips = lan_ips()
     primary = next((x["ip"] for x in ips if x["primary"]), ips[0]["ip"] if ips else None)
+    share_ip, share_src = host_ip_for_share()
+    if share_ip:
+        # 容器里跑：分享地址用宿主机 IP，容器自身 IP 降为参考项保留
+        primary = share_ip
+        ips = ([{"ip": share_ip, "primary": True,
+                 "guess": "宿主机 · %s" % share_src}] +
+               [dict(x, primary=False) for x in ips if x["ip"] != share_ip])
     return {
         "hostname": socket.gethostname(),
         "primary": primary,
@@ -168,6 +230,8 @@ def sysinfo(port, bind):
         "navPort": port,
         "navBind": bind,
         "navFile": os.path.relpath(NAV_FILE, ROOT).replace("\\", "/"),
+        "inContainer": IN_CONTAINER,
+        "probeHost": PROBE_HOST,
         "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     }
 
@@ -212,7 +276,7 @@ def probe_one(svc, states=None):
 
     if kind == "tcp":
         try:
-            s = socket.create_connection(("127.0.0.1", svc["port"]), timeout=2)
+            s = socket.create_connection((PROBE_HOST, svc["port"]), timeout=2)
             s.close()
             res["status"] = "up"
             res["detail"] = "tcp connect ok"
@@ -223,7 +287,7 @@ def probe_one(svc, states=None):
 
     # http：路径缺省就用 context 根 "/"
     path = svc.get("probe") or "/"
-    url = "http://127.0.0.1:%d%s" % (svc["port"], path)
+    url = "http://%s:%d%s" % (PROBE_HOST, svc["port"], path)
     try:
         req = urllib.request.Request(url, method="GET",
                                      headers={"Cache-Control": "no-store"})
@@ -395,8 +459,9 @@ def main():
         return 0
 
     cfg = load_services()
-    bind = opt("--bind", DEFAULT_BIND)
-    port_arg = opt("--port")
+    # 命令行参数优先于环境变量（容器里一般只用环境变量）
+    bind = opt("--bind", _env("NAV_BIND", DEFAULT_BIND))
+    port_arg = opt("--port", _env("NAV_PORT"))
     ports = (int(port_arg),) if port_arg else DEFAULT_PORTS
 
     if not os.path.exists(NAV_FILE):
@@ -406,6 +471,8 @@ def main():
     print("[1/4] 载入服务清单 %s（%d 个服务，版本 %s）"
           % (os.path.relpath(SERVICES_FILE, ROOT), len(cfg["services"]),
              cfg.get("version", "?")))
+    print("      运行环境：%s ｜ 健康探测目标：%s"
+          % ("容器内（docker）" if IN_CONTAINER else "宿主机", PROBE_HOST))
     print("[2/4] 探测本机内网 IP ...")
     info = sysinfo(ports[0], bind)
     for x in info["lanIps"]:

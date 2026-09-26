@@ -8,6 +8,8 @@ tools/nav/
 ├── services.json      ← 【唯一数据源】服务清单 + 默认账号 + 快速上手
 ├── serve_nav.py       ← 托管导航页 + 3 个只读 JSON 端点（零第三方依赖）
 ├── 服务导航.html       ← 导航页本体（不含任何硬编码账号/host）
+├── Dockerfile         ← 容器镜像（python:3.12-alpine + docker-cli）
+├── docker-compose.yml ← 容器化启动（挂 docker.sock + host-gateway）
 └── README.md
 ```
 
@@ -23,6 +25,44 @@ python tools/nav/serve_nav.py --open       # 启动后自动开浏览器
 
 然后打开 http://localhost:8899/ ，Ctrl+C 停止。
 ⚠️ 默认监听 `0.0.0.0`，同网段设备也能看到（页面上有端口和账号），不需要时停掉或加 `--bind 127.0.0.1`。
+
+## 用 Docker 跑（调试时最省事）
+
+不想在宿主机留一个常驻 Python 进程，或者想和 docker 里的 casdoor 一起管理时，用 compose：
+
+```bash
+docker compose -f tools/nav/docker-compose.yml up -d --build   # 改过脚本/清单就带 --build
+docker compose -f tools/nav/docker-compose.yml logs -f          # 看探测日志
+docker compose -f tools/nav/docker-compose.yml down             # 停掉
+```
+
+同样打开 <http://localhost:8899/>。compose 里只定义导航页自己，Casdoor 本体由外部提供
+（仓库根的 `docker-compose.yml`，或者 `docker run -d --name casdoor-test -p 8000:8000
+casbin/casdoor-all-in-one`）——两种方式导航页都能正确探测到，因为它探的是宿主机端口。
+
+**容器化的关键坑：容器里的 `127.0.0.1` 是容器自己。** 照搬宿主机的探测写法会让 6 个服务
+全部误报 down。所以脚本新增了 `NAV_PROBE_HOST` 把探测目标指到宿主机，compose 里已配好
+`host.docker.internal`，配合 `extra_hosts: host-gateway`（Linux 必需，Docker Desktop 无害）。
+
+| 环境变量 | 默认 | 说明 |
+|---|---|---|
+| `NAV_PROBE_HOST` | `127.0.0.1` | 健康探测目标主机。**容器内必须指到宿主机** |
+| `NAV_HOST_IP` | 自动解析 | 页面「共享给其他设备」显示的宿主机内网 IP |
+| `NAV_PORT` | `8899` | 监听端口（被占仍自动顺延） |
+| `NAV_BIND` | `0.0.0.0` | 监听地址 |
+
+宿主机直跑时这些变量留空即可，行为与以前完全一致（探测 `127.0.0.1`）。
+
+容器内还挂载了 `/var/run/docker.sock`（只读）并装了 docker-cli，这样卡片上的「容器状态」
+一栏能真的查到 `docker ps`。它只用于展示，不参与 up/down 判定。
+
+⚠️ 本机 buildx 写 `~/.docker/buildx/activity` 会报 `operation not permitted`（沙箱限制），
+`docker compose build` 会失败。绕开办法是用经典构建器：
+
+```bash
+DOCKER_BUILDKIT=0 docker build -t casdoor-nav:latest tools/nav
+docker compose -f tools/nav/docker-compose.yml up -d --no-build
+```
 
 **本机坑：环境里有 `http_proxy`/`HTTPS_PROXY`（指向 127.0.0.1 的沙箱代理），
 `curl http://127.0.0.1:8899/` 会被代理接走返回 502。** 命令行验证请加 `curl --noproxy '*'`；

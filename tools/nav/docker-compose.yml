@@ -1,0 +1,43 @@
+# Casdoor 本地开发服务导航（tools/nav）——容器化启动，方便调试。
+#
+# 用法：
+#   docker compose -f tools/nav/docker-compose.yml up -d --build   # 首次或改了脚本后加 --build
+#   docker compose -f tools/nav/docker-compose.yml down
+#   docker compose -f tools/nav/docker-compose.yml logs -f
+# 然后打开 http://localhost:8899/
+#
+# 本文件只管「导航页自己」。Casdoor 本体（8000）由外部提供——可以用仓库根的
+# docker-compose.yml，也可以像下面这样单独起一个 all-in-one：
+#   docker run -d --name casdoor-test -p 8000:8000 casbin/casdoor-all-in-one
+# 导航服务通过 host.docker.internal 探测宿主机端口，所以不管 Casdoor 是容器起的
+# 还是宿主机 go run 起的，都能正确反映出在线状态。
+
+services:
+  nav:
+    build: .
+    image: casdoor-nav:latest
+    container_name: casdoor-nav
+    ports:
+      - "8899:8899"
+    environment:
+      NAV_PORT: "8899"
+      NAV_BIND: "0.0.0.0"
+      # 容器内 127.0.0.1 是容器自己，必须指到宿主机，否则所有服务误报 down
+      NAV_PROBE_HOST: host.docker.internal
+      # 可选：显式指定宿主机内网 IP，用于页面「共享给其他设备」的分享地址。
+      # 不填时脚本会自动解析 host.docker.internal，通常就够了。
+      # NAV_HOST_IP: "192.168.1.100"
+    volumes:
+      # 只为让容器内 docker ps 能查到容器状态（仅展示用，不影响在线判定），只读挂载
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    extra_hosts:
+      # Linux 上必须显式加这一条 host.docker.internal 才存在；
+      # Docker Desktop 上 host-gateway 同样解析到宿主机，加了也无害，换机器不用改。
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8899/__services"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
